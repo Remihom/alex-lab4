@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>ESP32 WebSocket Control</title>
+<style>
+body { font-family: Arial; background: #f5f5f5; padding: 20px; }
+.card { background: white; padding: 20px; border-radius: 10px; max-width: 400px; }
+button, input { padding: 10px; margin: 5px 0; width: 100%; }
+h2 { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>ESP32 HC-SR04</h2>
+
+  <p><b>Distance:</b> <span id="dist">-</span> cm</p>
+  <p><b>Mode:</b> <span id="mode">-</span></p>
+  <p><b>Manual value:</b> <span id="manual">-</span></p>
+
+  <button onclick="setAuto()">AUTO</button>
+  <button onclick="setManual()">MANUAL</button>
+
+  <input type="number" id="value" placeholder="Manual value">
+  <button onclick="setValue()">Set value</button>
+</div>
+
+<script>
+let ws = new WebSocket("ws://localhost:9080/");
+
+ws.onmessage = (event) => {
+  let d = JSON.parse(event.data);
+  document.getElementById("dist").innerText = d.distance;
+  document.getElementById("mode").innerText = d.mode;
+  document.getElementById("manual").innerText = d.manual;
+};
+
+function setAuto() {
+  ws.send("auto");
+}
+function setManual() {
+  ws.send("manual");
+}
+function setValue() {
+  let v = document.getElementById("value").value;
+  ws.send("value:" + v);
+}
+</script>
+
+</body>
+</html>
