@@ -1,73 +1,114 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="uk">
 <head>
-  <meta charset="UTF-8">
-  <title>ESP32 HC-SR04</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ESP32 HC-SR04 WebSocket (ArduinoWebsockets)</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
-    }
-    .card {
-      max-width: 500px;
-      margin: 40px auto;
-      background: #fff;
-      padding: 20px;
-      border-radius: 8px;
-    }
-    button, input {
-      width: 100%;
-      margin-top: 10px;
-      padding: 12px;
-      font-size: 16px;
-    }
+    body { font-family: system-ui, Arial; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin: 12px 0; }
+    input, button { padding: 10px 12px; font-size: 16px; }
+    button { cursor: pointer; }
+    .big { font-size: 20px; font-weight: 700; }
+    .muted { color: #666; }
+    .ok { color: #0a7; font-weight: 700; }
+    .bad { color: #d33; font-weight: 700; }
+    code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
   </style>
 </head>
 <body>
+  <h2>ESP32 + HC-SR04 (WebSocket)</h2>
+  <div class="card">
+    <div class="row">
+      <label>WS URL:</label>
+      <input id="wsUrl" style="min-width:340px" value="ws://localhost:9080/" />
+      <button id="btnConnect">Connect</button>
+      <span id="status" class="bad">DISCONNECTED</span>
+    </div>
+    <p class="muted">
+      Порада: у Wokwi сервер WS працює на порту 80, а gateway віддає це як <code>localhost:9080</code>.
+      Для зовнішнього доступу (piehost) зроби публічний URL на твій localhost (див. інструкцію нижче).
+    </p>
+  </div>
 
-<div class="card">
-  <h2>ESP32 HC-SR04</h2>
+  <div class="card">
+    <div class="big">Distance: <span id="dist">—</span> cm</div>
+    <div>Mode: <span id="mode">—</span></div>
+    <div>Manual value: <span id="manVal">—</span></div>
+  </div>
 
-  <p>Distance: <b id="distance">-</b> cm</p>
-  <p>Mode: <b id="mode">-</b></p>
-  <p>Manual value: <b id="manual">-</b></p>
+  <div class="card">
+    <h3>Керування</h3>
+    <div class="row">
+      <button id="btnAuto">AUTO</button>
+      <button id="btnManual">MANUAL</button>
+      <input id="manualInput" type="number" step="0.1" placeholder="manual value" />
+      <button id="btnSet">Set manual value</button>
+    </div>
+  </div>
 
-  <button onclick="setAuto()">AUTO</button>
-  <button onclick="setManual()">MANUAL</button>
-
-  <input type="number" id="manualInput" placeholder="Manual value">
-  <button onclick="setValue()">Set value</button>
-</div>
+  <div class="card">
+    <h3>Лог</h3>
+    <pre id="log" style="white-space:pre-wrap;margin:0"></pre>
+  </div>
 
 <script>
-  // 🔴 ТУТ СТВОРЮЄТЬСЯ WebSocket
-  const ws = new WebSocket("wss://something-random.trycloudflare.com");
+  let ws = null;
 
-  ws.onopen = () => {
-    console.log("WebSocket connected");
+  const el = (id) => document.getElementById(id);
+  const log = (s) => { el('log').textContent = `[${new Date().toLocaleTimeString()}] ${s}\n` + el('log').textContent; };
+
+  function setStatus(connected) {
+    el('status').textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+    el('status').className = connected ? 'ok' : 'bad';
+  }
+
+  function send(obj) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      log('WS not connected');
+      return;
+    }
+    ws.send(JSON.stringify(obj));
+  }
+
+  el('btnConnect').onclick = () => {
+    const url = el('wsUrl').value.trim();
+    if (!url) return;
+
+    try {
+      if (ws) ws.close();
+      ws = new WebSocket(url);
+
+      ws.onopen = () => { setStatus(true); log('WS open: ' + url); };
+      ws.onclose = () => { setStatus(false); log('WS closed'); };
+      ws.onerror = (e) => { setStatus(false); log('WS error'); };
+
+      ws.onmessage = (ev) => {
+        // очікуємо JSON: {distance_cm, mode, manual_value}
+        try {
+          const data = JSON.parse(ev.data);
+          if (typeof data.distance_cm !== 'undefined') el('dist').textContent = data.distance_cm;
+          if (typeof data.mode !== 'undefined') el('mode').textContent = data.mode;
+          if (typeof data.manual_value !== 'undefined') el('manVal').textContent = data.manual_value;
+        } catch (e) {
+          log('RX (non-JSON): ' + ev.data);
+        }
+      };
+    } catch (e) {
+      log('Connect error: ' + e.message);
+    }
   };
 
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    document.getElementById("distance").innerText = data.distance;
-    document.getElementById("mode").innerText = data.mode;
-    document.getElementById("manual").innerText = data.manual;
+  el('btnAuto').onclick = () => send({ cmd: 'setMode', mode: 'auto' });
+  el('btnManual').onclick = () => send({ cmd: 'setMode', mode: 'manual' });
+  el('btnSet').onclick = () => {
+    const v = parseFloat(el('manualInput').value);
+    if (Number.isNaN(v)) { log('Enter manual value'); return; }
+    send({ cmd: 'setManual', value: v });
   };
-
-  function setAuto() {
-    ws.send("auto");
-  }
-
-  function setManual() {
-    ws.send("manual");
-  }
-
-  function setValue() {
-    const v = document.getElementById("manualInput").value;
-    ws.send("value:" + v);
-  }
 </script>
-
 </body>
 </html>
+
 
