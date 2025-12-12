@@ -1,52 +1,73 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>ESP32 WebSocket Control</title>
-<style>
-body { font-family: Arial; background: #f5f5f5; padding: 20px; }
-.card { background: white; padding: 20px; border-radius: 10px; max-width: 400px; }
-button, input { padding: 10px; margin: 5px 0; width: 100%; }
-h2 { margin-top: 0; }
-</style>
+  <meta charset="UTF-8">
+  <title>ESP32 HC-SR04</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+    }
+    .card {
+      max-width: 500px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    button, input {
+      width: 100%;
+      margin-top: 10px;
+      padding: 12px;
+      font-size: 16px;
+    }
+  </style>
 </head>
 <body>
 
 <div class="card">
   <h2>ESP32 HC-SR04</h2>
 
-  <p><b>Distance:</b> <span id="dist">-</span> cm</p>
-  <p><b>Mode:</b> <span id="mode">-</span></p>
-  <p><b>Manual value:</b> <span id="manual">-</span></p>
+  <p>Distance: <b id="distance">-</b> cm</p>
+  <p>Mode: <b id="mode">-</b></p>
+  <p>Manual value: <b id="manual">-</b></p>
 
   <button onclick="setAuto()">AUTO</button>
   <button onclick="setManual()">MANUAL</button>
 
-  <input type="number" id="value" placeholder="Manual value">
+  <input type="number" id="manualInput" placeholder="Manual value">
   <button onclick="setValue()">Set value</button>
 </div>
 
 <script>
-let ws = new WebSocket("ws://localhost:9080/");
+  // 🔴 ТУТ СТВОРЮЄТЬСЯ WebSocket
+  const ws = new WebSocket("wss://something-random.trycloudflare.com");
 
-ws.onmessage = (event) => {
-  let d = JSON.parse(event.data);
-  document.getElementById("dist").innerText = d.distance;
-  document.getElementById("mode").innerText = d.mode;
-  document.getElementById("manual").innerText = d.manual;
-};
+  ws.onopen = () => {
+    console.log("WebSocket connected");
+  };
 
-function setAuto() {
-  ws.send("auto");
-}
-function setManual() {
-  ws.send("manual");
-}
-function setValue() {
-  let v = document.getElementById("value").value;
-  ws.send("value:" + v);
-}
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    document.getElementById("distance").innerText = data.distance;
+    document.getElementById("mode").innerText = data.mode;
+    document.getElementById("manual").innerText = data.manual;
+  };
+
+  function setAuto() {
+    ws.send("auto");
+  }
+
+  function setManual() {
+    ws.send("manual");
+  }
+
+  function setValue() {
+    const v = document.getElementById("manualInput").value;
+    ws.send("value:" + v);
+  }
 </script>
 
 </body>
 </html>
+
