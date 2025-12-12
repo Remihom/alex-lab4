@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ESP32 HC-SR04 WebSocket (ArduinoWebsockets)</title>
+  <title>ESP32 HC-SR04 WebSocket (PieSocket)</title>
   <style>
     body { font-family: system-ui, Arial; max-width: 900px; margin: 24px auto; padding: 0 12px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -18,22 +18,22 @@
   </style>
 </head>
 <body>
-  <h2>ESP32 + HC-SR04 (WebSocket)</h2>
+  <h2>ESP32 + HC-SR04 (PieSocket Client)</h2>
+  
   <div class="card">
     <div class="row">
       <label>WS URL:</label>
-      <input id="wsUrl" style="min-width:340px" value="ws://localhost:9080/" />
+      <input id="wsUrl" style="min-width:340px" placeholder="wss://xxxxx.nyc1.piesocket.com/v3/1?api_key=..." />
       <button id="btnConnect">Connect</button>
       <span id="status" class="bad">DISCONNECTED</span>
     </div>
     <p class="muted">
-      Порада: у Wokwi сервер WS працює на порту 80, а gateway віддає це як <code>localhost:9080</code>.
-      Для зовнішнього доступу (piehost) зроби публічний URL на твій localhost (див. інструкцію нижче).
+      Вставте повний URL (з API Key) з панелі PieSocket.
     </p>
   </div>
 
   <div class="card">
-    <div class="big">Distance: <span id="dist">—</span> cm</div>
+    <div class="big">Distance: <span id="dist">—</span></div>
     <div>Mode: <span id="mode">—</span></div>
     <div>Manual value: <span id="manVal">—</span></div>
   </div>
@@ -41,58 +41,74 @@
   <div class="card">
     <h3>Керування</h3>
     <div class="row">
-      <button id="btnAuto">AUTO</button>
-      <button id="btnManual">MANUAL</button>
-      <input id="manualInput" type="number" step="0.1" placeholder="manual value" />
-      <button id="btnSet">Set manual value</button>
+      <button id="btnAuto">AUTO MODE</button>
+      <button id="btnManual">MANUAL MODE</button>
+      <input id="manualInput" type="number" step="1" placeholder="Enter value (0-99)" />
+      <button id="btnSet">Set Value</button>
     </div>
   </div>
 
   <div class="card">
     <h3>Лог</h3>
-    <pre id="log" style="white-space:pre-wrap;margin:0"></pre>
+    <pre id="log" style="white-space:pre-wrap;margin:0;max-height: 200px; overflow-y: auto; background: #eee; padding: 10px;"></pre>
   </div>
 
 <script>
   let ws = null;
 
   const el = (id) => document.getElementById(id);
-  const log = (s) => { el('log').textContent = `[${new Date().toLocaleTimeString()}] ${s}\n` + el('log').textContent; };
+  const log = (s) => { 
+      const time = new Date().toLocaleTimeString();
+      el('log').textContent = `[${time}] ${s}\n` + el('log').textContent; 
+  };
 
   function setStatus(connected) {
     el('status').textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
     el('status').className = connected ? 'ok' : 'bad';
   }
 
-  function send(obj) {
+  // Функція надсилання (тепер шле звичайний текст, не JSON)
+  function send(msg) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      log('WS not connected');
+      log('Error: WS not connected');
       return;
     }
-    ws.send(JSON.stringify(obj));
+    ws.send(msg);
+    log('TX: ' + msg);
   }
 
   el('btnConnect').onclick = () => {
     const url = el('wsUrl').value.trim();
-    if (!url) return;
+    if (!url) { alert("Введіть URL!"); return; }
 
     try {
       if (ws) ws.close();
       ws = new WebSocket(url);
 
-      ws.onopen = () => { setStatus(true); log('WS open: ' + url); };
-      ws.onclose = () => { setStatus(false); log('WS closed'); };
-      ws.onerror = (e) => { setStatus(false); log('WS error'); };
+      ws.onopen = () => { setStatus(true); log('Connected to PieSocket'); };
+      ws.onclose = () => { setStatus(false); log('Connection closed'); };
+      ws.onerror = (e) => { setStatus(false); log('WebSocket Error'); };
 
       ws.onmessage = (ev) => {
-        // очікуємо JSON: {distance_cm, mode, manual_value}
-        try {
-          const data = JSON.parse(ev.data);
-          if (typeof data.distance_cm !== 'undefined') el('dist').textContent = data.distance_cm;
-          if (typeof data.mode !== 'undefined') el('mode').textContent = data.mode;
-          if (typeof data.manual_value !== 'undefined') el('manVal').textContent = data.manual_value;
-        } catch (e) {
-          log('RX (non-JSON): ' + ev.data);
+        const msg = ev.data;
+        // Тут ми не виводимо весь лог, щоб не спамити, якщо дані йдуть часто
+        // log('RX: ' + msg); 
+
+        // Парсинг текстових команд від ESP32
+        // ESP32 надсилає: "DIST:25", "STATUS:AUTO", "VAL:50", "MANUAL_VAL:50"
+        
+        if (msg.startsWith("DIST:")) {
+            el('dist').textContent = msg.split(":")[1] + " cm";
+        } 
+        else if (msg.startsWith("STATUS:")) {
+            el('mode').textContent = msg.split(":")[1];
+            log("Mode changed: " + msg.split(":")[1]);
+        }
+        else if (msg.startsWith("VAL:") || msg.startsWith("MANUAL_VAL:")) {
+            el('manVal').textContent = msg.split(":")[1];
+        }
+        else {
+            log("Unknown RX: " + msg);
         }
       };
     } catch (e) {
@@ -100,12 +116,16 @@
     }
   };
 
-  el('btnAuto').onclick = () => send({ cmd: 'setMode', mode: 'auto' });
-  el('btnManual').onclick = () => send({ cmd: 'setMode', mode: 'manual' });
+  // Кнопки тепер відправляють прості текстові команди, як у C++ коді
+  el('btnAuto').onclick = () => send("AUTO");
+  el('btnManual').onclick = () => send("MANUAL");
+  
   el('btnSet').onclick = () => {
-    const v = parseFloat(el('manualInput').value);
-    if (Number.isNaN(v)) { log('Enter manual value'); return; }
-    send({ cmd: 'setManual', value: v });
+    const v = parseInt(el('manualInput').value);
+    if (isNaN(v)) { log('Enter a number first'); return; }
+    
+    // Формат команди для C++ коду: "VAL:50"
+    send("VAL:" + v);
   };
 </script>
 </body>
